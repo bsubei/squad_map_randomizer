@@ -2,7 +2,11 @@
 A script that generates a random map rotation for Squad using a certain pattern.
 
 # Usage
-Run `python3 squad_map_randomizer.py --help` for usage. It requires a JSON input file with all the map layer info.
+Run `python3 squad_map_randomizer.py --help` for usage.
+
+# JSON input file
+The script requires a JSON input file with all the map layer info in a particular format. The default provided JSON file
+was last updated by DrStrangeLove in 2019-10-28.
 
 # Pattern
     2x Random Skirmish Layers
