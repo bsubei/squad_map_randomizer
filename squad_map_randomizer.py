@@ -16,6 +16,7 @@
 #
 
 import argparse
+from discord_webhook import DiscordWebhook
 import json
 import random
 
@@ -36,11 +37,14 @@ def parse_cli():
                         help='Filepath to write out map rotation to.')
     parser.add_argument('-i', '--input-filepath', default=DEFAULT_JSON_INPUT_FILEPATH,
                         help='Filepath of JSON file to use for map layers.')
+    parser.add_argument('--discord-webhook-url', required=False,
+                        help=('The URL to the Discord webhook if you want to post the latest rotation to a Discord'
+                              ' channel.'))
     return parser.parse_args()
 
 
 def parse_json_layers(input_filepath):
-    """ Return the JSON object represented by the given input_filepath. """
+    """ Return the JSON object represented by the given input_filepath as a list of dicts."""
     with open(input_filepath, 'rb') as f:
         return json.load(f)
 
@@ -69,7 +73,7 @@ def get_valid_layer(available_layers, chosen_rotation, valid_condition):
 
 def get_map_rotation(all_layers):
     """
-    Given all the map layers as JSON objects, return a subset as the chosen map rotation based on the following rules:
+    Given all the map layers as a list of dicts, return the chosen map rotation based on the following rules:
 
     General pattern:
     2x Random Skirmish Layers
@@ -104,7 +108,7 @@ def get_map_rotation(all_layers):
     remaining_aas_raas_heli_layers = list(filter(lambda m: m['helicopters'], remaining_aas_raas_layers))
     remaining_invasion_layers = list(filter(lambda m: m['gamemode'] == 'Invasion', nonbugged_layers))
 
-    # The chosen rotation will be stored here (as a list of these JSON objects).
+    # The chosen rotation will be stored here (as a list of these dicts).
     chosen_rotation = []
 
     # First map (Skirmish) gets chosen no matter what. Remove it from the pool of remaining layers (using without
@@ -172,11 +176,22 @@ def get_map_rotation(all_layers):
     return chosen_rotation
 
 
+def get_layers_string(map_rotation):
+    """ Returns all the layers from the given map rotation as a string with newlines. """
+    return '\n'.join([layer['layer'] for layer in map_rotation])
+
+
 def write_rotation(map_rotation, output_filepath):
-    """ Writes out given JSON objects to the given output filepath as a map rotation. """
+    """ Writes out given map rotation (list of dicts) to the given output filepath as a map rotation. """
     with open(output_filepath, 'w') as f:
-        for layer in map_rotation:
-            f.write('{}\n'.format(layer['layer']))
+        f.write(get_layers_string(map_rotation))
+
+
+def send_rotation_to_discord(map_rotation, discord_webhook_url):
+    """ Sends the map rotation as a message to the discord channel for the given webhook URL. """
+    if discord_webhook_url:
+        webhook = DiscordWebhook(url=discord_webhook_url, content=get_layers_string(map_rotation))
+        webhook.execute()
 
 
 def main():
@@ -185,6 +200,7 @@ def main():
     layers = parse_json_layers(args.input_filepath)
     chosen_map_rotation = get_map_rotation(layers)
     write_rotation(chosen_map_rotation, args.output_filepath)
+    send_rotation_to_discord(chosen_map_rotation, args.discord_webhook_url)
 
 
 if __name__ == '__main__':
