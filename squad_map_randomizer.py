@@ -16,6 +16,7 @@
 #
 
 import argparse
+import datetime
 from discord_webhook import DiscordWebhook
 import json
 import random
@@ -190,7 +191,10 @@ def write_rotation(map_rotation, output_filepath):
 def send_rotation_to_discord(map_rotation, discord_webhook_url):
     """ Sends the map rotation as a message to the discord channel for the given webhook URL. """
     if discord_webhook_url:
-        webhook = DiscordWebhook(url=discord_webhook_url, content=get_layers_string(map_rotation))
+        # Need to pretty up the discord message string first.
+        discord_message = 'The map rotation for {} is:\n```{}```'.format(
+                                datetime.date.today(), get_layers_string(map_rotation))
+        webhook = DiscordWebhook(url=discord_webhook_url, content=discord_message)
         webhook.execute()
 
 
