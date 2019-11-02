@@ -8,6 +8,13 @@ A script that generates a random map rotation for Squad using a certain pattern.
         1x AAS or RAAS layer that must have Helicopters
         1x Invasion layer
     }
+    
+    Layers cannot be repeated in the entire rotation (without replacement policy when sampling).
+    A layer cannot be repeated if another layer of the same map was last played three (adjustable) maps ago.  
+
+
+# Installation
+You will need Python 3.6+ installed. Then install required dependencies using `pip install -r requirements.txt`.
 
 # Usage
 Run `python3 squad_map_randomizer.py --help` for usage.
