@@ -19,7 +19,11 @@ import argparse
 import datetime
 from discord_webhook import DiscordWebhook
 import json
+import logging
 import random
+
+logging.basicConfig(
+    filename='squad_map_randomizer.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 # Use the current working directory for MapRotation file and the default name.
 DEFAULT_MAP_ROTATION_FILEPATH = 'MapRotation.cfg'
@@ -29,6 +33,8 @@ DEFAULT_JSON_INPUT_FILEPATH = 'layers.json'
 NUM_STARTING_SKIRMISH_MAPS = 2
 # The number of times to repeat the AAS/RAAS/Invasion pattern.
 NUM_REPEATING_PATTERN = 5
+# A layer will be discarded if a layer with the same map was last played this many layers ago.
+NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP = 3
 
 
 def parse_cli():
@@ -50,25 +56,35 @@ def parse_json_layers(input_filepath):
         return json.load(f)
 
 
-def get_valid_layer(available_layers, chosen_rotation, valid_condition):
+def get_valid_layer(available_layers, chosen_rotation, min_layers_before_duplicate_map):
     """
-    Given the available layers to choose from, the current chosen_rotation, and a valid condition lambda, randomly
-    chooses and returns a layer if it satisfies the valid condition.
+    Given the available layers to choose from, the current chosen_rotation, and the number of layers to check behind
+    for a duplicate map, randomly chooses and returns a layer.
 
-    :param available_layers:  A list of available layers to choose from (as JSON objects).
-    :param chosen_rotation:  The list of currently chosen layers (only used to print debug messages).
-    :param valid_condition:  A lambda that takes in the candidate layer and returns whether it is valid or not.
-    :return: A randomly chosen layer that satisfies the condition.
+    :param available_layers:  A list of available layers to choose from (as dicts derived from the JSON object).
+    :param chosen_rotation:  The list of currently chosen layers.
+    :param min_layers_before_duplicate_map:  The number of maps before a duplicate map is allowed.
+    :return: A randomly chosen layer that did not have the same map played recently.
     """
+    # Throw warnings if given an incorrect index to check for duplicate maps and use a default of 1.
+    if 1 > min_layers_before_duplicate_map < len(chosen_rotation):
+        logging.error('min_layers_before_duplicate_map was invalid {} in get_valid_layer()!'.format(
+                        min_layers_before_duplicate_map))
+        min_layers_before_duplicate_map = 1
+
     # Attempt to get a valid layer that doesn't break the rules. Throw an exception if you can't.
+    layers_to_avoid_duplicating = chosen_rotation[-min_layers_before_duplicate_map:]
     for _ in range(100):
         candidate_layer = random.choice(available_layers)
-        # If the layers follows the rules, add it to the chosen rotation.
-        if valid_condition(candidate_layer):
+        if candidate_layer['map'] not in [layer['map'] for layer in layers_to_avoid_duplicating]:
+            # If the layers follows the rules, add it to the chosen rotation.
             return candidate_layer
         else:
-            print('Discarding chosen layer {} because it has the same map as the previous layers {} and {}.'.format(
-                    candidate_layer['layer'], chosen_rotation[-1]['layer'], chosen_rotation[-2]['layer']))
+            # Otherwise, give a warning and continue attempting to get a valid layer.
+            previous_layers_string = ', '.join(
+                            [layer['layer'] for layer in layers_to_avoid_duplicating])
+            logging.warning('Discarding chosen layer {} because it has the same map as the previous layers {}.'.format(
+                            candidate_layer['layer'], previous_layers_string))
     raise ValueError('Could not get a valid layer! Aborting!')
 
 
@@ -88,8 +104,8 @@ def get_map_rotation(all_layers):
 
     - Remove bugged layers.
     - Layers cannot be repeated in the entire rotation (without replacement policy when sampling).
-    - A map cannot be repeated in the above pattern (even if a different layer).
-    - A map cannot be played consecutively at the edge of the pattern (e.g. Basrah Invasion then Basrah AAS).
+    - A layer cannot be repeated if another layer of the same map was last played NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP
+      maps ago.
 
     Notes:
      - There are 23 AAS layers.
@@ -119,11 +135,8 @@ def get_map_rotation(all_layers):
     remaining_skirmish_layers.remove(chosen_layer)
 
     # The remaining skirmish maps have to be validated.
-    for _ in range(1, NUM_STARTING_SKIRMISH_MAPS):
-        chosen_layer = get_valid_layer(
-                            remaining_skirmish_layers,
-                            chosen_rotation,
-                            lambda candidate: candidate['map'] != chosen_rotation[-1]['map'])
+    for idx in range(1, NUM_STARTING_SKIRMISH_MAPS):
+        chosen_layer = get_valid_layer(remaining_skirmish_layers, chosen_rotation, idx)
         chosen_rotation.append(chosen_layer)
         # Remove it from the pool since we used it (using without replacement policy).
         remaining_skirmish_layers.remove(chosen_layer)
@@ -134,10 +147,7 @@ def get_map_rotation(all_layers):
         # NOTE: Chosen layer is valid only if these two conditions are true:
         # 1- Adding this layer does not cause two consecutive layers to have the same map.
         # 2- This layer's map is not in the current pattern (automatically guaranteed).
-        chosen_layer = get_valid_layer(
-                            remaining_aas_raas_layers,
-                            chosen_rotation,
-                            lambda candidate: candidate['map'] != chosen_rotation[-1]['map'])
+        chosen_layer = get_valid_layer(remaining_aas_raas_layers, chosen_rotation, NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP)
         chosen_rotation.append(chosen_layer)
         # Remove it from the pool since we used it (using without replacement policy).
         remaining_aas_raas_layers.remove(chosen_rotation[-1])
@@ -150,9 +160,7 @@ def get_map_rotation(all_layers):
         # 1- Adding this layer does not cause two consecutive layers to have the same map.
         # 2- This layer's map is not in the current pattern (guaranteed by above condition).
         chosen_layer = get_valid_layer(
-                            remaining_aas_raas_heli_layers,
-                            chosen_rotation,
-                            lambda candidate: candidate['map'] != chosen_rotation[-1]['map'])
+                            remaining_aas_raas_heli_layers, chosen_rotation, NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP)
         chosen_rotation.append(chosen_layer)
         # Remove it from the pool since we used it (using without replacement policy).
         remaining_aas_raas_heli_layers.remove(chosen_layer)
@@ -164,10 +172,7 @@ def get_map_rotation(all_layers):
         # NOTE: Chosen layer is valid only if these two conditions are true:
         # 1- Adding this layer does not cause two consecutive layers to have the same map.
         # 2- This layer's map is not in the current pattern (must be checked explicitly).
-        chosen_layer = get_valid_layer(
-                remaining_invasion_layers,
-                chosen_rotation,
-                lambda candidate: candidate['map'] not in (chosen_rotation[-1]['map'], chosen_rotation[-2]['map']))
+        chosen_layer = get_valid_layer(remaining_invasion_layers, chosen_rotation, NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP)
         chosen_rotation.append(chosen_layer)
         # Remove it from the pool since we used it (using without replacement policy).
         remaining_invasion_layers.remove(chosen_layer)
