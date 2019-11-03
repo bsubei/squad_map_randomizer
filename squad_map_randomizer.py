@@ -16,8 +16,9 @@
 #
 
 import argparse
+import asyncio
 import datetime
-from discord_webhook import DiscordWebhook
+import discord
 import json
 import logging
 import random
@@ -34,6 +35,22 @@ NUM_STARTING_SKIRMISH_MAPS = 2
 NUM_REPEATING_PATTERN = 5
 # A layer will be discarded if a layer with the same map was last played this many layers ago.
 NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP = 3
+# The description text to post in the Discord channel for map rotations.
+CHANNEL_DESCRIPTION_TEXT = (
+                    'The daily map rotation will be posted here. The rotation is always randomized and follows'
+                    ' the following pattern:\n'
+                    '```\n'
+                    '2x Random Skirmish Layers\n'
+                    'Repeat the pattern 5x {\n'
+                    '    1x AAS or RAAS layer\n'
+                    '    1x AAS or RAAS layer that must have Helicopters\n'
+                    '    1x Invasion layer\n'
+                    '}\n'
+                    '```\n'
+                    'Other rules:\n'
+                    '- Layers cannot be repeated in the entire rotation (without replacement policy when sampling).\n'
+                    '- A layer cannot be repeated if another layer of the same map was last played 3 maps ago.\n'
+                    )
 
 
 def parse_cli():
@@ -41,10 +58,11 @@ def parse_cli():
     parser = argparse.ArgumentParser()
     parser.add_argument('-o', '--output-filepath', default=DEFAULT_MAP_ROTATION_FILEPATH,
                         help='Filepath to write out map rotation to.')
-    parser.add_argument('--discord-webhook-url', required=False,
-                        help=('The URL to the Discord webhook if you want to post the latest rotation to a Discord'
-                              ' channel.'))
-    # Expect either an input filepath or URL.
+    parser.add_argument('--discord-channel-id', required=False,
+                        help=('The ID of the Discord channel to post the rotation messages to.'))
+    parser.add_argument('--discord-token', required=False,
+                        help=('The token for the Discord bot authorized to post to your Discord guild/server.'))
+    # Expect either an input filepath or URL, but not both.
     input_group = parser.add_mutually_exclusive_group(required=True)
     input_group.add_argument('--input-filepath', help='Filepath of JSON file to use for map layers.')
     input_group.add_argument('--input-url', help='URL to JSON file to use for map layers.')
@@ -198,14 +216,40 @@ def write_rotation(map_rotation, output_filepath):
         f.write(get_layers_string(map_rotation))
 
 
-def send_rotation_to_discord(map_rotation, discord_webhook_url):
-    """ Sends the map rotation as a message to the discord channel for the given webhook URL. """
-    if discord_webhook_url:
-        # Need to pretty up the discord message string first.
-        discord_message = 'The map rotation for {} is:\n```{}```'.format(
-                                datetime.date.today(), get_layers_string(map_rotation))
-        webhook = DiscordWebhook(url=discord_webhook_url, content=discord_message)
-        webhook.execute()
+def post_to_discord(discord_token, discord_channel_id, map_rotation):
+    """ Makes the only message in a Discord channel contain the map rotation. """
+    # Only post to Discord if both the token and channel id are given.
+    if discord_token and discord_channel_id:
+        # Assemble the new message to post.
+        discord_message = '{}\nThe map rotation for {} is:\n```{}```'.format(
+                                CHANNEL_DESCRIPTION_TEXT, datetime.date.today(), get_layers_string(map_rotation))
+        # Set up the event loop (since the discord client must run asynchronously)
+        loop = asyncio.get_event_loop()
+        # Create a Discord client.
+        client = discord.Client(loop=loop)
+
+        @client.event
+        async def on_ready():
+            """
+            Once the bot connects, removes all messages in Discord channel and posts the most recent map rotation as
+            one message.
+            """
+            # Get handle to Discord channel with given ID.
+            await asyncio.sleep(10)
+            channel = client.get_channel(int(discord_channel_id))
+            # Delete all old messages in channel.
+            await channel.purge()
+            # Post the new message.
+            await channel.send(discord_message)
+            # Finally, log out the client so this script doesn't sit here forever waiting for events.
+            await client.logout()
+
+        try:
+            # Actually start up the client.
+            loop.run_until_complete(client.start(discord_token))
+        except Exception as e:
+            # If you catch any exceptions (not including KeyboardInterrupt), just log them and move on.
+            logging.error('Skipping posting to Discord due to failure: {}'.format(str(e)))
 
 
 def main():
@@ -214,7 +258,7 @@ def main():
     layers = get_json_layers(args.input_filepath, args.input_url)
     chosen_map_rotation = get_map_rotation(layers)
     write_rotation(chosen_map_rotation, args.output_filepath)
-    send_rotation_to_discord(chosen_map_rotation, args.discord_webhook_url)
+    post_to_discord(args.discord_token, args.discord_channel_id, chosen_map_rotation)
 
 
 if __name__ == '__main__':
