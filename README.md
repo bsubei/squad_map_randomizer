@@ -20,8 +20,8 @@ You will need Python 3.6+ installed. Then install required dependencies using `p
 Run `python3 squad_map_randomizer.py --help` for usage.
 
 # JSON input file
-The script requires a JSON input file with all the map layer info in a particular format. The default provided JSON file
-was last updated by DrStrangeLove in 2019-10-28.
+The script requires a JSON input file with all the map layer info in a particular format. 
+See `https://github.com/bsubei/squad_map_layers` for an example file (that will hopefully stay updated).
 
 # Running automatically in Crontab
 See the `crontab.example` for an example on what to add to the crontab to run this script automatically.
