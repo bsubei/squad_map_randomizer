@@ -1,5 +1,3 @@
-# Add the following line to your crontab to have the rotation updated daily at 4am (make sure
-# the python script is executable with chmod +X /path/to/squad_map_randomizer.py):
+# Add the following line to your crontab to have the rotation updated daily at 4am:
 00 04 * * * python3 /path/to/squad_map_randomizer.py -o /path/to/MapRotation.cfg -i /path/to/layers.json
 # Note: using absolute paths for everything makes things simpler.
-# TODO not sure what the absolute path for python3 is. Need to run `which python3` on the target machine.
