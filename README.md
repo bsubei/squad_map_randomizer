@@ -14,7 +14,7 @@ A script that generates a random map rotation for Squad using a certain pattern.
 
 
 # Installation
-You will need Python 3.6+ installed. Then install required dependencies using `pip install -r requirements.txt`.
+You will need Python 3.6+ installed. Then install required dependencies using `pip3 install -r requirements.txt`.
 
 # Usage
 Run `python3 squad_map_randomizer.py --help` for usage.
