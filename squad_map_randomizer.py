@@ -21,14 +21,13 @@ from discord_webhook import DiscordWebhook
 import json
 import logging
 import random
+from urllib import request
 
 logging.basicConfig(
     filename='squad_map_randomizer.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 # Use the current working directory for MapRotation file and the default name.
 DEFAULT_MAP_ROTATION_FILEPATH = 'MapRotation.cfg'
-# Use the cwd for the input JSON file containing all the map/layer data.
-DEFAULT_JSON_INPUT_FILEPATH = 'layers.json'
 # The number of skirmish maps to add to beginning of map rotation.
 NUM_STARTING_SKIRMISH_MAPS = 2
 # The number of times to repeat the AAS/RAAS/Invasion pattern.
@@ -42,18 +41,31 @@ def parse_cli():
     parser = argparse.ArgumentParser()
     parser.add_argument('-o', '--output-filepath', default=DEFAULT_MAP_ROTATION_FILEPATH,
                         help='Filepath to write out map rotation to.')
-    parser.add_argument('-i', '--input-filepath', default=DEFAULT_JSON_INPUT_FILEPATH,
-                        help='Filepath of JSON file to use for map layers.')
     parser.add_argument('--discord-webhook-url', required=False,
                         help=('The URL to the Discord webhook if you want to post the latest rotation to a Discord'
                               ' channel.'))
+    # Expect either an input filepath or URL.
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument('--input-filepath', help='Filepath of JSON file to use for map layers.')
+    input_group.add_argument('--input-url', help='URL to JSON file to use for map layers.')
     return parser.parse_args()
 
 
-def parse_json_layers(input_filepath):
-    """ Return the JSON object represented by the given input_filepath as a list of dicts."""
-    with open(input_filepath, 'rb') as f:
-        return json.load(f)
+def get_json_layers(input_filepath, input_url):
+    """
+    Return the JSON object represented by the given filepath or URL (in the args) as a list of dicts. See
+    https://github.com/bsubei/squad_map_layers for an example layers JSON file.
+    """
+    # If the URL is defined, fetch the JSON file from there and parse it into a list of dicts.
+    if input_url:
+        text = request.urlopen(input_url).read().decode('utf-8')
+        return json.loads(text)
+    elif input_filepath:
+        # Just read the JSON file from a filepath and
+        with open(input_filepath, 'rb') as f:
+            return json.load(f)
+    else:
+        raise ValueError('Sanity check failed! No input args provided!')
 
 
 def get_valid_layer(available_layers, chosen_rotation, min_layers_before_duplicate_map):
@@ -106,13 +118,6 @@ def get_map_rotation(all_layers):
     - Layers cannot be repeated in the entire rotation (without replacement policy when sampling).
     - A layer cannot be repeated if another layer of the same map was last played NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP
       maps ago.
-
-    Notes:
-     - There are 23 AAS layers.
-     - There are 50 RAAS layers.
-     - There are 34 Invasion layers.
-     - There are 30 TC layers.
-     - Had to correct "Kamdesh TC v1" to "Kamdesh TC v2".
     """
     # First, filter out all the bugged layers.
     nonbugged_layers = list(filter(lambda m: not m['bugged'], all_layers))
@@ -206,7 +211,7 @@ def send_rotation_to_discord(map_rotation, discord_webhook_url):
 def main():
     """ Run the script and write out a map rotation. """
     args = parse_cli()
-    layers = parse_json_layers(args.input_filepath)
+    layers = get_json_layers(args.input_filepath, args.input_url)
     chosen_map_rotation = get_map_rotation(layers)
     write_rotation(chosen_map_rotation, args.output_filepath)
     send_rotation_to_discord(chosen_map_rotation, args.discord_webhook_url)
