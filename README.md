@@ -1,5 +1,5 @@
 # Summary
-A script that generates a random map rotation for Squad using a certain pattern.
+A script that generates a random map rotation for Squad using a certain pattern. Takes in all the available layers and generates an output `MapRotation.cfg` to be used by your Squad server (needs a restart, see crontab/schtasks to automate this). Optionally sends a Discord message with the map rotation (using a webhook).
 
 # Pattern
     2x Random Skirmish Layers
@@ -14,7 +14,7 @@ A script that generates a random map rotation for Squad using a certain pattern.
 
 
 # Installation
-You will need Python 3.6+ installed. Then install required dependencies using `pip3 install -r requirements.txt`.
+You will need Python 3.6+ installed. Then install required dependencies using `pip3 install -r requirements.txt`. In order to use the `--discord-webhook-url` argument, you need to add a webhook to one of your Discord channels and use the webhook URL for the argument.
 
 # Usage
 Run `python3 squad_map_randomizer.py --help` for usage.
