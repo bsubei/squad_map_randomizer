@@ -110,6 +110,7 @@ def get_map_rotation(all_layers):
         1x AAS or RAAS layer
         1x AAS or RAAS layer that must have Helicopters
         1x Invasion layer
+        1x AAS or RAAS layer
     }
 
     Other rules:
@@ -149,9 +150,6 @@ def get_map_rotation(all_layers):
     # Repeat the pattern five times.
     for _ in range(NUM_REPEATING_PATTERN):
         # 1x AAS or RAAS layer
-        # NOTE: Chosen layer is valid only if these two conditions are true:
-        # 1- Adding this layer does not cause two consecutive layers to have the same map.
-        # 2- This layer's map is not in the current pattern (automatically guaranteed).
         chosen_layer = get_valid_layer(remaining_aas_raas_layers, chosen_rotation, NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP)
         chosen_rotation.append(chosen_layer)
         # Remove it from the pool since we used it (using without replacement policy).
@@ -161,9 +159,6 @@ def get_map_rotation(all_layers):
             remaining_aas_raas_heli_layers.remove(chosen_rotation[-1])
 
         # 1x AAS or RAAS layer that must have Helicopters
-        # NOTE: Chosen layer is valid only if these two conditions are true:
-        # 1- Adding this layer does not cause two consecutive layers to have the same map.
-        # 2- This layer's map is not in the current pattern (guaranteed by above condition).
         chosen_layer = get_valid_layer(
                             remaining_aas_raas_heli_layers, chosen_rotation, NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP)
         chosen_rotation.append(chosen_layer)
@@ -174,13 +169,19 @@ def get_map_rotation(all_layers):
             remaining_aas_raas_layers.remove(chosen_layer)
 
         # 1x Invasion layer
-        # NOTE: Chosen layer is valid only if these two conditions are true:
-        # 1- Adding this layer does not cause two consecutive layers to have the same map.
-        # 2- This layer's map is not in the current pattern (must be checked explicitly).
         chosen_layer = get_valid_layer(remaining_invasion_layers, chosen_rotation, NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP)
         chosen_rotation.append(chosen_layer)
         # Remove it from the pool since we used it (using without replacement policy).
         remaining_invasion_layers.remove(chosen_layer)
+
+        # 1x AAS or RAAS layer
+        chosen_layer = get_valid_layer(remaining_aas_raas_layers, chosen_rotation, NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP)
+        chosen_rotation.append(chosen_layer)
+        # Remove it from the pool since we used it (using without replacement policy).
+        remaining_aas_raas_layers.remove(chosen_rotation[-1])
+        # Don't forget to remove this from the heli subset if needed.
+        if chosen_rotation[-1] in remaining_aas_raas_heli_layers:
+            remaining_aas_raas_heli_layers.remove(chosen_rotation[-1])
 
     # TODO also check that the last layer does not have the same map as the first Skirmish layer.
 
