@@ -7,6 +7,7 @@ A script that generates a random map rotation for Squad using a certain pattern.
         1x AAS or RAAS layer
         1x AAS or RAAS layer that must have Helicopters
         1x Invasion layer
+        1x AAS or RAAS layer
     }
     
     Layers cannot be repeated in the entire rotation (without replacement policy when sampling).
