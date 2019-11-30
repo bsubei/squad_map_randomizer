@@ -59,13 +59,23 @@ def get_json_layers(input_filepath, input_url):
     # If the URL is defined, fetch the JSON file from there and parse it into a list of dicts.
     if input_url:
         text = request.urlopen(input_url).read().decode('utf-8')
-        return json.loads(text)
+        all_layers = json.loads(text)
     elif input_filepath:
         # Just read the JSON file from a filepath and
         with open(input_filepath, 'rb') as f:
-            return json.load(f)
+            all_layers = json.load(f)
     else:
         raise ValueError('Sanity check failed! No input args provided!')
+
+    # Filter out all the bugged layers and return that.
+    return list(filter(lambda m: not m['bugged'], all_layers))
+
+
+def get_random_skirmish_layer(input_filepath, input_url):
+    """ Return one random skirmish layer as a string from either the given filepath or URL to the JSON layers file. """
+    layers = get_json_layers(input_filepath, input_url)
+    remaining_skirmish_layers = list(filter(lambda m: m['gamemode'] == 'Skirmish', layers))
+    return get_layers([random.choice(remaining_skirmish_layers)])[0]
 
 
 def get_valid_layer(available_layers, chosen_rotation, min_layers_before_duplicate_map):
@@ -101,7 +111,7 @@ def get_valid_layer(available_layers, chosen_rotation, min_layers_before_duplica
 
 
 # TODO take in these arguments as a config from a file so editing the pattern is easier for users.
-def get_map_rotation(all_layers, num_starting_skirmish_maps=NUM_STARTING_SKIRMISH_MAPS,
+def get_map_rotation(nonbugged_layers, num_starting_skirmish_maps=NUM_STARTING_SKIRMISH_MAPS,
                      num_repeating_pattern=NUM_REPEATING_PATTERN,
                      num_min_layers_before_duplicate_map=NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP):
     """
@@ -123,10 +133,7 @@ def get_map_rotation(all_layers, num_starting_skirmish_maps=NUM_STARTING_SKIRMIS
     - A layer cannot be repeated if another layer of the same map was last played NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP
       maps ago.
     """
-    # First, filter out all the bugged layers.
-    nonbugged_layers = list(filter(lambda m: not m['bugged'], all_layers))
-
-    # Now, organize all the layers by their gamemode and whether they have helicopters.
+    # Organize all the layers by their gamemode and whether they have helicopters.
     # NOTE: since we use a "without replacement" policy when randomly sampling, these remaining_*_layers lists will have
     # elements removed as the rotation is built out.
     remaining_skirmish_layers = list(filter(lambda m: m['gamemode'] == 'Skirmish', nonbugged_layers))
@@ -194,6 +201,11 @@ def get_map_rotation(all_layers, num_starting_skirmish_maps=NUM_STARTING_SKIRMIS
 def get_layers_string(map_rotation):
     """ Returns all the layers from the given map rotation as a string with newlines. """
     return '\n'.join([layer['layer'] for layer in map_rotation])
+
+
+def get_layers(map_rotation):
+    """ Returns all the layers from the given map rotation as a list of strings. """
+    return [layer['layer'] for layer in map_rotation]
 
 
 def write_rotation(map_rotation, output_filepath):
