@@ -23,9 +23,6 @@ import logging
 import random
 from urllib import request
 
-logging.basicConfig(
-    filename='squad_map_randomizer.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-
 # Use the current working directory for MapRotation file and the default name.
 DEFAULT_MAP_ROTATION_FILEPATH = 'MapRotation.cfg'
 # The number of skirmish maps to add to beginning of map rotation.
@@ -181,7 +178,7 @@ def get_map_rotation(nonbugged_layers, num_starting_skirmish_maps=NUM_STARTING_S
         # 1x Invasion layer
         chosen_layer = get_valid_layer(remaining_invasion_layers, chosen_rotation, num_min_layers_before_duplicate_map)
         # TODO(bsubei): temporarily removing invasion from the choices until #1 is implemented.
-        #chosen_rotation.append(chosen_layer)
+        # chosen_rotation.append(chosen_layer)
         # Remove it from the pool since we used it (using without replacement policy).
         remaining_invasion_layers.remove(chosen_layer)
 
