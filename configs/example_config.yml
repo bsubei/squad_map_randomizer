@@ -1,0 +1,22 @@
+seeding:
+  - gamemode: Skirmish
+  - gamemode: Skirmish
+pattern_repeats: 5
+pattern:
+  - gamemode:
+    - AAS
+    - RAAS
+    map_size: small
+  - gamemode:
+    - AAS
+    - RAAS
+    map_size: medium
+  - gamemode:
+    - AAS
+    - RAAS
+    map_size: medium
+  - gamemode:
+    - AAS
+    - RAAS
+    map_size: large
+    helicopters: true

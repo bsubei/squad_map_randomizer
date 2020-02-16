@@ -27,5 +27,8 @@ See `https://github.com/bsubei/squad_map_layers` for an example file (that will 
 # Running automatically in Crontab
 See the `crontab.example` for an example on what to add to the crontab to run this script automatically.
 
+# Running unit tests
+You can run the unit tests with `python3 -m pytest` in the project root directory (add `-s` to enable `ipdb` support).
+
 # License
 The license is GPLv3. See LICENSE file.

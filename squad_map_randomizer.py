@@ -16,12 +16,14 @@
 #
 
 import argparse
+import collections
 import datetime
 from discord_webhook import DiscordWebhook
 import json
 import logging
 import random
 from urllib import request
+import yaml
 
 # Use the current working directory for MapRotation file and the default name.
 DEFAULT_MAP_ROTATION_FILEPATH = 'MapRotation.cfg'
@@ -31,6 +33,11 @@ NUM_STARTING_SKIRMISH_MAPS = 2
 NUM_REPEATING_PATTERN = 5
 # A layer will be discarded if a layer with the same map was last played this many layers ago.
 NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP = 3
+
+
+class InvalidConfigException(Exception):
+    """ Exception raised when a config is invalid. """
+    pass
 
 
 def parse_cli():
@@ -107,7 +114,7 @@ def get_valid_layer(available_layers, chosen_rotation, min_layers_before_duplica
     raise ValueError('Could not get a valid layer! Aborting!')
 
 
-# TODO take in these arguments as a config from a file so editing the pattern is easier for users.
+# TODO actually use the config in the map rotation
 def get_map_rotation(nonbugged_layers, num_starting_skirmish_maps=NUM_STARTING_SKIRMISH_MAPS,
                      num_repeating_pattern=NUM_REPEATING_PATTERN,
                      num_min_layers_before_duplicate_map=NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP):
@@ -222,10 +229,74 @@ def send_rotation_to_discord(map_rotation, discord_webhook_url):
         webhook.execute()
 
 
+def validate_config(config, layers):
+    """
+    Raises InvalidConfigException if the given config is invalid. Uses the given layers to make sure the config is
+    compatible.
+    """
+    # NOTE(bsubei): the only field in the config that is necessary is 'pattern', and it must be a list with at least one
+    # element.
+    pattern_config = config.get('pattern')
+    if pattern_config is None or not isinstance(pattern_config, list) or len(pattern_config) < 1:
+        raise InvalidConfigException('Missing or invalid "pattern" key in config!')
+
+    # Unlike the pattern config, the seeding config is optional but if it exists, it must be valid.
+    seeding_config = config.get('seeding', ['any'])
+    if seeding_config is not None and (not isinstance(seeding_config, list) or len(seeding_config) < 1):
+        raise InvalidConfigException('Given "seeding" key is invalid! Should be a list!')
+
+    # Check that 'pattern_repeats' is a valid number if it exists (and if it doesn't, a default of 1 should be valid).
+    pattern_repeats = config.get('pattern_repeats', 1)
+    if not isinstance(pattern_repeats, int) or pattern_repeats < 1:
+        raise InvalidConfigException('Invalid "pattern_repeats" value in config! Please use a positive integer.')
+
+    # A helper conditional that returns whether a given key is 'team' and the layers have this key.
+    def key_is_team(key):
+        return (key == 'team' and
+                all(layer.get('team1') is not None for layer in layers) and
+                all(layer.get('team2') is not None for layer in layers))
+
+    # Check that each given filter in the config is a valid field name for EVERY map layer. Or that it has the
+    # keyword 'any' to signify no filter used for this layer.
+    def validate(config, layers):
+        for filter_config in config:
+            # In the special case of strings, only the keyword 'any' is valid.
+            if isinstance(filter_config, str):
+                if filter_config.casefold() == 'any':
+                    return
+                else:
+                    raise InvalidConfigException(f'Invalid values for config section: {filter_config}!')
+            # Otherwise, only dict types are valid configs.
+            if not isinstance(filter_config, collections.Mapping):
+                raise InvalidConfigException(f'Given config {filter_config} has invalid type/structure!')
+
+            # Make sure every key in the config exists in **all** the layers. Otherwise, the config is invalid.
+            # NOTE(bsubei): this is validating the layers as much as the config (both must be fully compatible).
+            # NOTE(bsubei): 'team' is a special key that we allow as long as 'team1' and 'team2' keys exist in layers.
+            for key in filter_config.keys():
+                if not key_is_team(key) and not all(layer.get(key) is not None for layer in layers):
+                    raise InvalidConfigException(f'Key {key} is not a valid key to filter by in {filter_config}!')
+        # Only after checking that every filter config is not invalid can we be sure that it is valid.
+
+    # Validate the seeding section of the config.
+    validate(seeding_config, layers)
+    # Validate the pattern section of the config.
+    validate(pattern_config, layers)
+
+
+def parse_config(config_path, layers):
+    """ Returns a rotation config. Raises InvalidConfigException if config is invalid. """
+    with open(config_path, 'r') as f:
+        config = yaml.load(f)
+    validate_config(config, layers)
+    return config
+
+
 def main():
     """ Run the script and write out a map rotation. """
     args = parse_cli()
     layers = get_json_layers(args.input_filepath, args.input_url)
+    # TODO actually use the config in the map rotation
     chosen_map_rotation = get_map_rotation(layers)
     write_rotation(chosen_map_rotation, args.output_filepath)
     send_rotation_to_discord(chosen_map_rotation, args.discord_webhook_url)
