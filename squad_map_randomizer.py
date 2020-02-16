@@ -229,7 +229,38 @@ def send_rotation_to_discord(map_rotation, discord_webhook_url):
         webhook.execute()
 
 
-# TODO cleanup
+def validate_helper(config, layers):
+    """
+    A helper function to validate that each filter in the given config is a valid field name for every map layer (with
+    special exceptions for the keyword 'any' or the 'team' filter key. Raises InvalidExceptionConfig if config invalid.
+    """
+
+    # A helper conditional that returns whether a given key is 'team' and the layers have this key.
+    def key_is_team(key):
+        return (key == 'team' and
+                all(layer.get('team1') is not None for layer in layers) and
+                all(layer.get('team2') is not None for layer in layers))
+
+    for filter_config in config:
+        # In the special case of strings, only the keyword 'any' is valid.
+        if isinstance(filter_config, str):
+            if filter_config.casefold() == 'any':
+                return
+            else:
+                raise InvalidConfigException(f'Invalid values for config section: {filter_config}!')
+        # Otherwise, only dict types are valid configs.
+        if not isinstance(filter_config, collections.Mapping):
+            raise InvalidConfigException(f'Given config {filter_config} has invalid type/structure!')
+
+        # Make sure every key in the config exists in **all** the layers. Otherwise, the config is invalid.
+        # NOTE(bsubei): this is validating the layers as much as the config (both must be fully compatible).
+        # NOTE(bsubei): 'team' is a special key that we allow as long as 'team1' and 'team2' keys exist in layers.
+        for key in filter_config.keys():
+            if not key_is_team(key) and not all(layer.get(key) is not None for layer in layers):
+                raise InvalidConfigException(f'Key {key} is not a valid key to filter by in {filter_config}!')
+    # Only after checking that every filter config is not invalid can we be sure that it is valid (and we do nothing).
+
+
 def validate_config(config, layers):
     """
     Raises InvalidConfigException if the given config is invalid. Uses the given layers to make sure the config is
@@ -257,38 +288,10 @@ def validate_config(config, layers):
     if not isinstance(pattern_repeats, int) or pattern_repeats < 1:
         raise InvalidConfigException('Invalid "pattern_repeats" value in config! Please use a positive integer.')
 
-    # A helper conditional that returns whether a given key is 'team' and the layers have this key.
-    def key_is_team(key):
-        return (key == 'team' and
-                all(layer.get('team1') is not None for layer in layers) and
-                all(layer.get('team2') is not None for layer in layers))
-
-    # Check that each given filter in the config is a valid field name for EVERY map layer. Or that it has the
-    # keyword 'any' to signify no filter used for this layer.
-    def validate(config, layers):
-        for filter_config in config:
-            # In the special case of strings, only the keyword 'any' is valid.
-            if isinstance(filter_config, str):
-                if filter_config.casefold() == 'any':
-                    return
-                else:
-                    raise InvalidConfigException(f'Invalid values for config section: {filter_config}!')
-            # Otherwise, only dict types are valid configs.
-            if not isinstance(filter_config, collections.Mapping):
-                raise InvalidConfigException(f'Given config {filter_config} has invalid type/structure!')
-
-            # Make sure every key in the config exists in **all** the layers. Otherwise, the config is invalid.
-            # NOTE(bsubei): this is validating the layers as much as the config (both must be fully compatible).
-            # NOTE(bsubei): 'team' is a special key that we allow as long as 'team1' and 'team2' keys exist in layers.
-            for key in filter_config.keys():
-                if not key_is_team(key) and not all(layer.get(key) is not None for layer in layers):
-                    raise InvalidConfigException(f'Key {key} is not a valid key to filter by in {filter_config}!')
-        # Only after checking that every filter config is not invalid can we be sure that it is valid.
-
     # Validate the seeding section of the config.
-    validate(seeding_config, layers)
+    validate_helper(seeding_config, layers)
     # Validate the pattern section of the config.
-    validate(pattern_config, layers)
+    validate_helper(pattern_config, layers)
 
 
 def parse_config(config_path, layers):
