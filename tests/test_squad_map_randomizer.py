@@ -20,9 +20,6 @@ from unittest import mock
 
 import squad_map_randomizer
 
-# Some constants used in mock objects.
-# TODO
-
 
 class TestSquadMapRandomizer:
     """ Test class (uses pytest) for the SquadMapRandomizer script. """
@@ -31,7 +28,26 @@ class TestSquadMapRandomizer:
 
     @pytest.fixture
     def example_layers(self):
-        """ The fixture function to return an example list of layers containing all valid fields. """
+        """
+        The fixture function to return a list of layers containing all valid fields (uses the real layers stored in the
+        bsubei/squad_map_layers GitHub repository.
+        Below is an example of a single layer (so we get a list of these):
+        {
+            "map": "Al Basrah",
+            "layer": "Al Basrah AAS v1",
+            "gamemode": "AAS",
+            "version": "v1",
+            "team1": "US",
+            "team2": "INS",
+            "helicopters": False,
+            "night": False,
+            "RAA_Lanes": False,
+            "Invasion_Random": False,
+            "bugged": False,
+            "map_size": "medium",
+        }
+        """
+        # TODO pull this layers from the GitHub repo
         return [{
             "map": "Al Basrah",
             "layer": "Al Basrah AAS v1",
@@ -44,7 +60,7 @@ class TestSquadMapRandomizer:
             "RAA_Lanes": False,
             "Invasion_Random": False,
             "bugged": False,
-            "map_size": "medium"
+            "map_size": "medium",
         }]
 
     @pytest.fixture
@@ -98,6 +114,14 @@ class TestSquadMapRandomizer:
             ]}, example_layers)
 
         # Invalid config test cases:
+
+        # Test that an invalid layers also makes the config "invalid".
+        with pytest.raises(squad_map_randomizer.InvalidConfigException):
+            squad_map_randomizer.validate_config({'pattern': ['any']}, 'not a list')
+        with pytest.raises(squad_map_randomizer.InvalidConfigException):
+            squad_map_randomizer.validate_config({'pattern': ['any']}, [])
+        with pytest.raises(squad_map_randomizer.InvalidConfigException):
+            squad_map_randomizer.validate_config({'pattern': ['any']}, ['not all elements are dict', {'a': 1}])
 
         # Test that a missing or incorrect 'pattern' field makes it invalid.
         with pytest.raises(squad_map_randomizer.InvalidConfigException):

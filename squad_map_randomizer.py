@@ -229,11 +229,18 @@ def send_rotation_to_discord(map_rotation, discord_webhook_url):
         webhook.execute()
 
 
+# TODO cleanup
 def validate_config(config, layers):
     """
     Raises InvalidConfigException if the given config is invalid. Uses the given layers to make sure the config is
     compatible.
     """
+    # Validate that the given layers is valid (we need to use its fields to ensure the config is valid).
+    if (not isinstance(layers, list) or
+            len(layers) < 1 or
+            not all(isinstance(layer, collections.Mapping) for layer in layers)):
+        raise InvalidConfigException('The given layers to check the config against is invalid!')
+
     # NOTE(bsubei): the only field in the config that is necessary is 'pattern', and it must be a list with at least one
     # element.
     pattern_config = config.get('pattern')
