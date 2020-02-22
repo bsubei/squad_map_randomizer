@@ -1,0 +1,7 @@
+# Two Skirmish maps for seeding, and then any ten maps. Note "any" is a special keyword here.
+starting_maps:
+  - gamemode: Skirmish
+  - gamemode: Skirmish
+number_of_repeats: 10
+regular_maps:
+  - any

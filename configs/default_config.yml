@@ -1,8 +1,8 @@
-seeding:
+starting_maps:
   - gamemode: Skirmish
   - gamemode: Skirmish
-pattern_repeats: 5
-pattern:
+number_of_repeats: 5
+regular_maps:
   - gamemode:
     - AAS
     - RAAS

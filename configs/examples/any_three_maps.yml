@@ -1,0 +1,5 @@
+# Just three maps with no filters. Note "any" is a special keyword here.
+regular_maps:
+ - any
+ - any
+ - any
