@@ -33,6 +33,10 @@ NUM_STARTING_SKIRMISH_MAPS = 2
 NUM_REPEATING_PATTERN = 5
 # A layer will be discarded if a layer with the same map was last played this many layers ago.
 NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP = 3
+# The default filepath to get the rotation config from.
+DEFAULT_CONFIG_FILEPATH = 'configs/default_config.yml'
+# The default URL to use to fetch the Squad map layers.
+DEFAULT_LAYERS_URL = 'https://raw.githubusercontent.com/bsubei/squad_map_layers/master/layers.json'
 
 
 class InvalidConfigException(Exception):
@@ -45,29 +49,35 @@ def parse_cli():
     parser = argparse.ArgumentParser()
     parser.add_argument('-o', '--output-filepath', default=DEFAULT_MAP_ROTATION_FILEPATH,
                         help='Filepath to write out map rotation to.')
+    parser.add_argument('-c', '--config-filepath', default=DEFAULT_CONFIG_FILEPATH,
+                        help=f'Filepath to read rotation config from. Defaults to {DEFAULT_CONFIG_FILEPATH}.')
     parser.add_argument('--discord-webhook-url', required=False,
                         help=('The URL to the Discord webhook if you want to post the latest rotation to a Discord'
                               ' channel.'))
     # Expect either an input filepath or URL.
-    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group = parser.add_mutually_exclusive_group()
     input_group.add_argument('--input-filepath', help='Filepath of JSON file to use for map layers.')
-    input_group.add_argument('--input-url', help='URL to JSON file to use for map layers.')
+    input_group.add_argument('--input-url', default=DEFAULT_LAYERS_URL,
+                             help=(f'URL to JSON file to use for map layers. Defaults to {DEFAULT_LAYERS_URL} if'
+                                   ' --input-filepath is not provided.'))
     return parser.parse_args()
 
 
+# TODO not tested after changes
 def get_json_layers(input_filepath, input_url):
     """
     Return the JSON object represented by the given filepath or URL (in the args) as a list of dicts. See
     https://github.com/bsubei/squad_map_layers for an example layers JSON file.
     """
-    # If the URL is defined, fetch the JSON file from there and parse it into a list of dicts.
-    if input_url:
-        text = request.urlopen(input_url).read().decode('utf-8')
-        all_layers = json.loads(text)
-    elif input_filepath:
+    # Parse the filepath as JSON if it's provided.
+    if input_filepath:
         # Just read the JSON file from a filepath and
         with open(input_filepath, 'rb') as f:
             all_layers = json.load(f)
+    # Otherwise, fetch the JSON file from the URL and parse it into a list of dicts.
+    elif input_url:
+        text = request.urlopen(input_url).read().decode('utf-8')
+        all_layers = json.loads(text)
     else:
         raise ValueError('Sanity check failed! No input args provided!')
 
@@ -245,7 +255,7 @@ def validate_helper(config, layers):
         # In the special case of strings, only the keyword 'any' is valid.
         if isinstance(filter_config, str):
             if filter_config.casefold() == 'any':
-                return
+                continue
             else:
                 raise InvalidConfigException(f'Invalid values for config section: {filter_config}!')
         # Otherwise, only dict types are valid configs.
@@ -272,26 +282,27 @@ def validate_config(config, layers):
             not all(isinstance(layer, collections.Mapping) for layer in layers)):
         raise InvalidConfigException('The given layers to check the config against is invalid!')
 
-    # NOTE(bsubei): the only field in the config that is necessary is 'pattern', and it must be a list with at least one
-    # element.
-    pattern_config = config.get('pattern')
-    if pattern_config is None or not isinstance(pattern_config, list) or len(pattern_config) < 1:
-        raise InvalidConfigException('Missing or invalid "pattern" key in config!')
+    # NOTE(bsubei): the only field in the config that is necessary is 'regular_maps', and it must be a list with at
+    # least one element.
+    regular_maps_config = config.get('regular_maps')
+    if regular_maps_config is None or not isinstance(regular_maps_config, list) or len(regular_maps_config) < 1:
+        raise InvalidConfigException('Missing or invalid "regular_maps" key in config!')
 
-    # Unlike the pattern config, the seeding config is optional but if it exists, it must be valid.
-    seeding_config = config.get('seeding', ['any'])
-    if seeding_config is not None and (not isinstance(seeding_config, list) or len(seeding_config) < 1):
-        raise InvalidConfigException('Given "seeding" key is invalid! Should be a list!')
+    # Unlike the regular_maps config, the starting_maps config is optional but if it exists, it must be valid.
+    starting_maps_config = config.get('starting_maps', ['any'])
+    if (starting_maps_config is not None and
+            (not isinstance(starting_maps_config, list) or len(starting_maps_config) < 1)):
+        raise InvalidConfigException('Given "starting_maps" key is invalid! Should be a list!')
 
-    # Check that 'pattern_repeats' is a valid number if it exists (and if it doesn't, a default of 1 should be valid).
-    pattern_repeats = config.get('pattern_repeats', 1)
-    if not isinstance(pattern_repeats, int) or pattern_repeats < 1:
-        raise InvalidConfigException('Invalid "pattern_repeats" value in config! Please use a positive integer.')
+    # Check that 'number_of_repeats' is a valid number if it exists (and if it doesn't, a default of 1 should be valid).
+    number_of_repeats = config.get('number_of_repeats', 1)
+    if not isinstance(number_of_repeats, int) or number_of_repeats < 1:
+        raise InvalidConfigException('Invalid "number_of_repeats" value in config! Please use a positive integer.')
 
-    # Validate the seeding section of the config.
-    validate_helper(seeding_config, layers)
-    # Validate the pattern section of the config.
-    validate_helper(pattern_config, layers)
+    # Validate the starting_maps section of the config.
+    validate_helper(starting_maps_config, layers)
+    # Validate the regular_maps section of the config.
+    validate_helper(regular_maps_config, layers)
 
 
 def parse_config(config_path, layers):
@@ -306,8 +317,8 @@ def main():
     """ Run the script and write out a map rotation. """
     args = parse_cli()
     layers = get_json_layers(args.input_filepath, args.input_url)
-    # TODO actually use the config in the map rotation
-    chosen_map_rotation = get_map_rotation(layers)
+    config = parse_config(args.config_filepath, layers)
+    chosen_map_rotation = get_map_rotation(config, layers)
     write_rotation(chosen_map_rotation, args.output_filepath)
     send_rotation_to_discord(chosen_map_rotation, args.discord_webhook_url)
 
