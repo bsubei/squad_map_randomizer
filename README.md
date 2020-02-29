@@ -13,14 +13,16 @@ The config file specifies:
 ### Example Config
 For example, the following config describes a map rotation with one Skirmish starting map, and six regular maps that alternate between small, medium, and large in size (notice we only define three regular maps and specify to repeat them twice):
 
-> starting\_maps:
->   - gamemode: Skirmish
-> number\_of\_repeats: 2
-> regular\_maps:
->   - map\_size: small
->   - map\_size: medium
->   - map\_size: large
 
+```
+starting_maps:
+  - gamemode: Skirmish
+number_of_repeats: 2
+regular_maps:
+  - map_size: small
+  - map_size: medium
+  - map_size: large
+```
 Every time the script is run with this config, it will generate a map rotation with randomly chosen maps that follow the specified pattern, like this: skirmish map, small map, medium map, large map, small map, medium map, large map.
 
 See the `configs/examples/` folder for more examples.
