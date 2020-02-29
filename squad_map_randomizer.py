@@ -17,6 +17,7 @@
 
 import argparse
 import collections
+import copy
 import datetime
 from discord_webhook import DiscordWebhook
 import json
@@ -56,14 +57,14 @@ def parse_cli():
                               ' channel.'))
     # Expect either an input filepath or URL.
     input_group = parser.add_mutually_exclusive_group()
-    input_group.add_argument('--input-filepath', help='Filepath of JSON file to use for map layers.')
+    input_group.add_argument(
+        '--input-filepath', help='Filepath of JSON file to use for map layers.')
     input_group.add_argument('--input-url', default=DEFAULT_LAYERS_URL,
                              help=(f'URL to JSON file to use for map layers. Defaults to {DEFAULT_LAYERS_URL} if'
                                    ' --input-filepath is not provided.'))
     return parser.parse_args()
 
 
-# TODO not tested after changes
 def get_json_layers(input_filepath, input_url):
     """
     Return the JSON object represented by the given filepath or URL (in the args) as a list of dicts. See
@@ -88,27 +89,27 @@ def get_json_layers(input_filepath, input_url):
 def get_random_skirmish_layer(input_filepath, input_url):
     """ Return one random skirmish layer as a string from either the given filepath or URL to the JSON layers file. """
     layers = get_json_layers(input_filepath, input_url)
-    remaining_skirmish_layers = list(filter(lambda m: m['gamemode'] == 'Skirmish', layers))
+    remaining_skirmish_layers = list(
+        filter(lambda m: m['gamemode'] == 'Skirmish', layers))
     return get_layers([random.choice(remaining_skirmish_layers)])[0]
 
 
-def get_valid_layer(available_layers, chosen_rotation, min_layers_before_duplicate_map):
+def get_nonduplicate_map(available_layers, chosen_rotation, min_layers_before_duplicate_map):
     """
     Given the available layers to choose from, the current chosen_rotation, and the number of layers to check behind
-    for a duplicate map, randomly chooses and returns a layer.
+    for a duplicate map, randomly chooses and returns a layer that follows the global filter rules (see README.md).
 
     :param available_layers:  A list of available layers to choose from (as dicts derived from the JSON object).
     :param chosen_rotation:  The list of currently chosen layers.
     :param min_layers_before_duplicate_map:  The number of maps before a duplicate map is allowed.
-    :return: A randomly chosen layer that did not have the same map played recently.
+    :return: A randomly chosen layer that follows the global filter rules.
     """
-    # Throw warnings if given an incorrect index to check for duplicate maps and use a default of 1.
-    if 1 > min_layers_before_duplicate_map < len(chosen_rotation):
-        logging.error('min_layers_before_duplicate_map was invalid {} in get_valid_layer()!'.format(
-                        min_layers_before_duplicate_map))
-        min_layers_before_duplicate_map = 1
+    # Clamp min_layers_before_duplicate map so it doesn't go out of bounds.
+    min_layers_before_duplicate_map = max(
+        1, min(len(chosen_rotation), min_layers_before_duplicate_map))
 
-    # Attempt to get a valid layer that doesn't break the rules. Throw an exception if you can't.
+    # Attempt to get a valid layer that doesn't break the global duplicate rules (don't duplicate same exact layer, and
+    # layers with the same map must not be consecutive). If we can't, print an error and return the best choice we can.
     layers_to_avoid_duplicating = chosen_rotation[-min_layers_before_duplicate_map:]
     for _ in range(100):
         candidate_layer = random.choice(available_layers)
@@ -116,99 +117,102 @@ def get_valid_layer(available_layers, chosen_rotation, min_layers_before_duplica
             # If the layers follows the rules, add it to the chosen rotation.
             return candidate_layer
         else:
-            # Otherwise, give a warning and continue attempting to get a valid layer.
+            # Otherwise, try again.
             previous_layers_string = ', '.join(
-                            [layer['layer'] for layer in layers_to_avoid_duplicating])
-            logging.warning('Discarding chosen layer {} because it has the same map as the previous layers {}.'.format(
-                            candidate_layer['layer'], previous_layers_string))
-    raise ValueError('Could not get a valid layer! Aborting!')
+                [layer['layer'] for layer in layers_to_avoid_duplicating])
+            logging.debug('Discarding chosen layer {} because it has the same map as the previous layers {}.'.format(
+                candidate_layer['layer'], previous_layers_string))
+
+    # If we still can't find a valid layer, return the best we can after printing an error.
+    logging.error(f'Could not get a valid map without duplicates! Choosing {candidate_layer["layer"]} anyways!')
+    return candidate_layer
 
 
-# TODO actually use the config in the map rotation
-def get_map_rotation(nonbugged_layers, num_starting_skirmish_maps=NUM_STARTING_SKIRMISH_MAPS,
-                     num_repeating_pattern=NUM_REPEATING_PATTERN,
-                     num_min_layers_before_duplicate_map=NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP):
+def get_map_rotation(
+        rotation_config,
+        all_layers,
+        num_min_layers_before_duplicate_map=NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP):
     """
-    Given all the map layers as a list of dicts, return the chosen map rotation based on the following rules:
+    Given all the layers to choose from, return a map rotation according to the global filters and the filters defined
+    in the given config.
 
-    General pattern:
-    2x Random Skirmish Layers
-    Repeat the pattern 5x {
-        1x AAS or RAAS layer
-        1x AAS or RAAS layer that must have Helicopters
-        1x Invasion layer
-        1x AAS or RAAS layer
-    }
-
-    Other rules:
-
-    - Remove bugged layers.
-    - Layers cannot be repeated in the entire rotation (without replacement policy when sampling).
-    - A layer cannot be repeated if another layer of the same map was last played NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP
-      maps ago.
+    :param rotation_config: dict The config that describes how to choose the rotation.
+    :param all_layers: list(dict) The list of layers to choose the rotation from.
+    :param num_min_layers_before_duplicate_map: The allowed distance between layers with duplicate maps.
     """
-    # Organize all the layers by their gamemode and whether they have helicopters.
-    # NOTE: since we use a "without replacement" policy when randomly sampling, these remaining_*_layers lists will have
-    # elements removed as the rotation is built out.
-    remaining_skirmish_layers = list(filter(lambda m: m['gamemode'] == 'Skirmish', nonbugged_layers))
-    remaining_aas_raas_layers = list(filter(lambda m: m['gamemode'] in ('AAS', 'RAAS'), nonbugged_layers))
-    remaining_aas_raas_heli_layers = list(filter(lambda m: m['helicopters'], remaining_aas_raas_layers))
-    remaining_invasion_layers = list(filter(lambda m: m['gamemode'] == 'Invasion', nonbugged_layers))
 
-    # The chosen rotation will be stored here (as a list of these dicts).
+    def upgrade_to_list(value):
+        return value if isinstance(value, list) else [value]
+
+    def apply_filter_config(remaining_layers, filter_config):
+        """ From the remaining_layers, filter using the config and return the filtered layers.  """
+        # Use filtered_layers as the result of filtering remaining_layers based on the config.
+        filtered_layers = remaining_layers
+
+        # NOTE(bsubei): multiple filter keys apply an "AND" operation. However, multiple values in one filter key apply
+        # an "OR" operation.
+        # e.g. given filter 1 is {'gamemode': ['AAS', 'RAAS']} and filter 2 is {'map_size': 'small'}, then the chosen
+        # layer will be either AAS **or** RAAS **and** either way must be a small size map.
+
+        # Skips filters if the special 'any' keyword is used.
+        should_skip_filter = isinstance(
+            filter_config, str) and filter_config.casefold() == 'any'
+        if not should_skip_filter:
+            for key, value in filter_config.items():
+                # We upgrade key and value to lists if they weren't already so we can use "in" instead of "==".
+                value = upgrade_to_list(value)
+                key = upgrade_to_list(key)
+                # The 'team' key is special and counts as either 'team1' or 'team2'.
+                if 'team' in key:
+                    key = ['team1', 'team2']
+                # Apply the current filter again and again until filtered_layers passes all the filters "AND"ed
+                # together.
+                filtered_layers = [
+                    layer for layer in filtered_layers for k in key if layer.get(k) in value]
+        return filtered_layers
+
+    def populate_chosen_rotation(chosen_rotation, remaining_layers, maps_config):
+        """
+        Populate the given chosen_rotation list from remaining_layers (using sample without replacement) by applying the
+        maps_config filters.
+        NOTE: this mutates both chosen_rotation and remaining_layers as they are passed by reference.
+        """
+        for idx, filter_config in enumerate(maps_config):
+            filtered_layers = apply_filter_config(
+                remaining_layers, filter_config)
+            # If no layers pass the filters, print an error and move on.
+            if not filtered_layers:
+                logging.error(f'No maps to choose from after applying filter {filter_config}! Skipping this filter!')
+                continue
+
+            # After we've filtered layers according to the filter config, randomly choose a layer that follows the
+            # global filter rules.
+            chosen_layer = get_nonduplicate_map(
+                filtered_layers, chosen_rotation, num_min_layers_before_duplicate_map)
+            chosen_rotation.append(chosen_layer)
+            # Remove it from the pool since we used it (using without replacement policy).
+            remaining_layers.remove(chosen_layer)
+
+    # Make a copy of the layers so we can sample from it without replacement.
+    remaining_layers = copy.deepcopy(all_layers)
+
+    # The chosen rotation will be stored here (as a list of layer dicts).
     chosen_rotation = []
 
-    # First map (Skirmish) gets chosen no matter what. Remove it from the pool of remaining layers (using without
-    # replacement policy).
-    chosen_layer = random.choice(remaining_skirmish_layers)
-    chosen_rotation.append(chosen_layer)
-    remaining_skirmish_layers.remove(chosen_layer)
+    # Get the config section for starting_maps.
+    starting_maps_config = rotation_config.get('starting_maps', [])
 
-    # The remaining skirmish maps have to be validated.
-    for idx in range(1, num_starting_skirmish_maps):
-        chosen_layer = get_valid_layer(remaining_skirmish_layers, chosen_rotation, idx)
-        chosen_rotation.append(chosen_layer)
-        # Remove it from the pool since we used it (using without replacement policy).
-        remaining_skirmish_layers.remove(chosen_layer)
+    # Fill up the chosen_rotation from remaining_layers by applying starting_maps_config.
+    # NOTE(bsubei): both chosen_rotation and remaining_layers are passed by reference and mutated in the function.
+    populate_chosen_rotation(
+        chosen_rotation, remaining_layers, starting_maps_config)
 
-    # Repeat the pattern five times.
-    for _ in range(num_repeating_pattern):
-        # 1x AAS or RAAS layer
-        chosen_layer = get_valid_layer(remaining_aas_raas_layers, chosen_rotation, num_min_layers_before_duplicate_map)
-        chosen_rotation.append(chosen_layer)
-        # Remove it from the pool since we used it (using without replacement policy).
-        remaining_aas_raas_layers.remove(chosen_rotation[-1])
-        # Don't forget to remove this from the heli subset if needed.
-        if chosen_rotation[-1] in remaining_aas_raas_heli_layers:
-            remaining_aas_raas_heli_layers.remove(chosen_rotation[-1])
-
-        # 1x AAS or RAAS layer that must have Helicopters
-        chosen_layer = get_valid_layer(
-                            remaining_aas_raas_heli_layers, chosen_rotation, num_min_layers_before_duplicate_map)
-        chosen_rotation.append(chosen_layer)
-        # Remove it from the pool since we used it (using without replacement policy).
-        remaining_aas_raas_heli_layers.remove(chosen_layer)
-        # Don't forget to remove this from the superset if needed.
-        if chosen_layer in remaining_aas_raas_heli_layers:
-            remaining_aas_raas_layers.remove(chosen_layer)
-
-        # 1x Invasion layer
-        chosen_layer = get_valid_layer(remaining_invasion_layers, chosen_rotation, num_min_layers_before_duplicate_map)
-        # TODO(bsubei): temporarily removing invasion from the choices until #1 is implemented.
-        # chosen_rotation.append(chosen_layer)
-        # Remove it from the pool since we used it (using without replacement policy).
-        remaining_invasion_layers.remove(chosen_layer)
-
-        # 1x AAS or RAAS layer
-        chosen_layer = get_valid_layer(remaining_aas_raas_layers, chosen_rotation, num_min_layers_before_duplicate_map)
-        chosen_rotation.append(chosen_layer)
-        # Remove it from the pool since we used it (using without replacement policy).
-        remaining_aas_raas_layers.remove(chosen_rotation[-1])
-        # Don't forget to remove this from the heli subset if needed.
-        if chosen_rotation[-1] in remaining_aas_raas_heli_layers:
-            remaining_aas_raas_heli_layers.remove(chosen_rotation[-1])
-
-    # TODO also check that the last layer does not have the same map as the first Skirmish layer.
+    # Now do it again number_of_repeats times for regular_maps_config.
+    number_of_repeats = rotation_config.get('number_of_repeats', 1)
+    regular_maps_config = rotation_config.get('regular_maps')
+    for _ in range(number_of_repeats):
+        populate_chosen_rotation(
+            chosen_rotation, remaining_layers, regular_maps_config)
 
     return chosen_rotation
 
@@ -234,8 +238,9 @@ def send_rotation_to_discord(map_rotation, discord_webhook_url):
     if discord_webhook_url:
         # Need to pretty up the discord message string first.
         discord_message = 'The map rotation for {} is:\n```{}```'.format(
-                                datetime.date.today(), get_layers_string(map_rotation))
-        webhook = DiscordWebhook(url=discord_webhook_url, content=discord_message)
+            datetime.date.today(), get_layers_string(map_rotation))
+        webhook = DiscordWebhook(
+            url=discord_webhook_url, content=discord_message)
         webhook.execute()
 
 
@@ -275,29 +280,37 @@ def validate_config(config, layers):
     """
     Raises InvalidConfigException if the given config is invalid. Uses the given layers to make sure the config is
     compatible.
+
+    :param config: dict The config that describes how to choose the rotation. See README.md for expected format.
+    :param layers: list(dict) The list of layers to check the config against.
+    :raises InvalidConfigException: The exception raised if the config is invalid.
     """
     # Validate that the given layers is valid (we need to use its fields to ensure the config is valid).
     if (not isinstance(layers, list) or
             len(layers) < 1 or
             not all(isinstance(layer, collections.Mapping) for layer in layers)):
-        raise InvalidConfigException('The given layers to check the config against is invalid!')
+        raise InvalidConfigException(
+            'The given layers to check the config against is invalid!')
 
     # NOTE(bsubei): the only field in the config that is necessary is 'regular_maps', and it must be a list with at
     # least one element.
     regular_maps_config = config.get('regular_maps')
     if regular_maps_config is None or not isinstance(regular_maps_config, list) or len(regular_maps_config) < 1:
-        raise InvalidConfigException('Missing or invalid "regular_maps" key in config!')
+        raise InvalidConfigException(
+            'Missing or invalid "regular_maps" key in config!')
 
     # Unlike the regular_maps config, the starting_maps config is optional but if it exists, it must be valid.
     starting_maps_config = config.get('starting_maps', ['any'])
     if (starting_maps_config is not None and
             (not isinstance(starting_maps_config, list) or len(starting_maps_config) < 1)):
-        raise InvalidConfigException('Given "starting_maps" key is invalid! Should be a list!')
+        raise InvalidConfigException(
+            'Given "starting_maps" key is invalid! Should be a list!')
 
     # Check that 'number_of_repeats' is a valid number if it exists (and if it doesn't, a default of 1 should be valid).
     number_of_repeats = config.get('number_of_repeats', 1)
     if not isinstance(number_of_repeats, int) or number_of_repeats < 1:
-        raise InvalidConfigException('Invalid "number_of_repeats" value in config! Please use a positive integer.')
+        raise InvalidConfigException(
+            'Invalid "number_of_repeats" value in config! Please use a positive integer.')
 
     # Validate the starting_maps section of the config.
     validate_helper(starting_maps_config, layers)
@@ -306,7 +319,14 @@ def validate_config(config, layers):
 
 
 def parse_config(config_path, layers):
-    """ Returns a rotation config. Raises InvalidConfigException if config is invalid. """
+    """
+    Returns a rotation config from the given config_path after validating against the given layers. Raises
+    InvalidConfigException if config is invalid.
+
+    :param config_path: str The path to the config file.
+    :param layers: list(dict) The list of layers to check against.
+    :raises InvalidConfigException: The exception raised if the config is invalid.
+    """
     with open(config_path, 'r') as f:
         config = yaml.load(f)
     validate_config(config, layers)
