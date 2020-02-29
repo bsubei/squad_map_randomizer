@@ -1,0 +1,5 @@
+# Ten maps in total, where every other map either has helicopters or does not have helicopters.
+number_of_repeats: 5
+regular_maps:
+  - helicopters: true
+  - helicopters: false

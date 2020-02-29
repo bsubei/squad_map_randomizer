@@ -1,0 +1,29 @@
+# Two starting maps, both Skirmish. One of them has GB or INS in either teams. The other is a Fool's Road map.
+starting_maps:
+  - gamemode: Skirmish
+    team:
+      - GB
+      - INS
+  - gamemode: Skirmish
+    map: Fool's Road
+
+# Repeat the regular maps 3 times.
+number_of_repeats: 3
+
+# Five maps (repeated 3 times).
+regular_maps:
+  # For the first map, the teams should have either INS or MIL.
+  - team:
+    - INS
+    - MIL
+  # For the second, the map size must be small and must have US in one of the teams.
+  - map_size: small
+    team: US
+  # For the third, the map size must be medium.
+  - map_size: medium
+  # For the fourth, it must be large and have helicopters.
+  - map_size: large
+    helicopters: true
+  # For the fifth, it must be large and must not have helicopters.
+  - map_size: large
+    helicopters: false

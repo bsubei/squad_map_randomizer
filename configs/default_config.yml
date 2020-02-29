@@ -1,0 +1,22 @@
+starting_maps:
+  - gamemode: Skirmish
+  - gamemode: Skirmish
+number_of_repeats: 5
+regular_maps:
+  - gamemode:
+    - AAS
+    - RAAS
+    map_size: small
+  - gamemode:
+    - AAS
+    - RAAS
+    map_size: medium
+  - gamemode:
+    - AAS
+    - RAAS
+    map_size: medium
+  - gamemode:
+    - AAS
+    - RAAS
+    map_size: large
+    helicopters: true

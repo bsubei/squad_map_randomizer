@@ -1,0 +1,5 @@
+# Five maps, all of them have US as one of the teams and helicopters.
+number_of_repeats: 5
+regular_maps:
+  - team: US
+    helicopters: true
