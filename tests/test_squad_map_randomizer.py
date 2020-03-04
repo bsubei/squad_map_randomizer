@@ -23,9 +23,6 @@ import yaml
 
 import squad_map_randomizer
 
-# The path to the default config file. This should always match the default_config fixture.
-DEFAULT_CONFIG_PATH = 'configs/default_config.yml'
-
 
 # Below are helper predicates used in the filters.
 def is_skirmish(layer):
@@ -239,7 +236,7 @@ class TestSquadMapRandomizer:
     def test_get_map_rotation_examples(self, default_layers):
         """ Tests that we can call get_map_rotation correctly on all the example configs. """
         # Test that all example configs can be parsed without problems, and result in non-empty rotations.
-        for path in os.scandir('configs/examples/'):
+        for path in os.scandir(squad_map_randomizer.EXAMPLES_CONFIG_DIR):
             config = squad_map_randomizer.parse_config(path, default_layers)
             rotation = squad_map_randomizer.get_map_rotation(
                 config, default_layers)
@@ -266,7 +263,7 @@ class TestSquadMapRandomizer:
     def test_is_config_valid_examples(self, default_layers):
         """ Tests that all the example configs successfully validate. """
         # Test that all example configs validate successfully.
-        for path in os.scandir('configs/examples/'):
+        for path in os.scandir(squad_map_randomizer.EXAMPLES_CONFIG_DIR):
             with open(path, 'r') as f:
                 squad_map_randomizer.validate_config(
                     yaml.load(f), default_layers)
@@ -391,4 +388,4 @@ class TestSquadMapRandomizer:
         # We expect the default config above to exactly match the one parsed from configs/default_config.yml.
         with mock.patch('squad_map_randomizer.validate_config'):
             assert squad_map_randomizer.parse_config(
-                DEFAULT_CONFIG_PATH, default_layers) == default_config
+                squad_map_randomizer.DEFAULT_CONFIG_FILEPATH, default_layers) == default_config

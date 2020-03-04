@@ -22,20 +22,29 @@ import datetime
 from discord_webhook import DiscordWebhook
 import json
 import logging
+import os
+import pathlib
 import random
 from urllib import request
 import yaml
 
-# Use the current working directory for MapRotation file and the default name.
-DEFAULT_MAP_ROTATION_FILEPATH = 'MapRotation.cfg'
 # The number of skirmish maps to add to beginning of map rotation.
 NUM_STARTING_SKIRMISH_MAPS = 2
 # The number of times to repeat the AAS/RAAS/Invasion pattern.
 NUM_REPEATING_PATTERN = 5
 # A layer will be discarded if a layer with the same map was last played this many layers ago.
 NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP = 3
+
+# The path to the current directory as a pathlib.Path object.
+CURRENT_DIR = pathlib.Path(os.path.dirname(__file__))
+# Use the current working directory for MapRotation file and the default name.
+DEFAULT_MAP_ROTATION_FILEPATH = CURRENT_DIR / pathlib.Path('MapRotation.cfg')
+# The path to the configs directory.
+CONFIG_DIR = CURRENT_DIR / pathlib.Path('configs')
+# The path to the example configs directory.
+EXAMPLES_CONFIG_DIR = CONFIG_DIR / pathlib.Path('examples')
 # The default filepath to get the rotation config from.
-DEFAULT_CONFIG_FILEPATH = 'configs/default_config.yml'
+DEFAULT_CONFIG_FILEPATH = CONFIG_DIR / pathlib.Path('default_config.yml')
 # The default URL to use to fetch the Squad map layers.
 DEFAULT_LAYERS_URL = 'https://raw.githubusercontent.com/bsubei/squad_map_layers/master/layers.json'
 
@@ -48,9 +57,9 @@ class InvalidConfigException(Exception):
 def parse_cli():
     """ Parses sys.argv (commandline args) and returns a parser with the arguments. """
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output-filepath', default=DEFAULT_MAP_ROTATION_FILEPATH,
-                        help='Filepath to write out map rotation to.')
-    parser.add_argument('-c', '--config-filepath', default=DEFAULT_CONFIG_FILEPATH,
+    parser.add_argument('-o', '--output-filepath', default=DEFAULT_MAP_ROTATION_FILEPATH, type=pathlib.Path,
+                        help=f'Filepath to write out map rotation to. Defaults to {DEFAULT_MAP_ROTATION_FILEPATH}')
+    parser.add_argument('-c', '--config-filepath', default=DEFAULT_CONFIG_FILEPATH, type=pathlib.Path,
                         help=f'Filepath to read rotation config from. Defaults to {DEFAULT_CONFIG_FILEPATH}.')
     parser.add_argument('--discord-webhook-url', required=False,
                         help=('The URL to the Discord webhook if you want to post the latest rotation to a Discord'
