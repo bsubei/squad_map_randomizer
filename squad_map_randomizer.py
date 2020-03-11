@@ -137,7 +137,7 @@ def get_nonduplicate_map(available_layers, chosen_rotation, min_layers_before_du
     return candidate_layer
 
 
-def get_map_rotation(
+def get_map_rotation_and_descriptions(
         rotation_config,
         all_layers,
         num_min_layers_before_duplicate_map=NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP):
@@ -180,7 +180,7 @@ def get_map_rotation(
                     layer for layer in filtered_layers for k in key if layer.get(k) in value]
         return filtered_layers
 
-    def populate_chosen_rotation(chosen_rotation, remaining_layers, maps_config):
+    def populate_chosen_rotation(chosen_rotation, descriptions, remaining_layers, maps_config):
         """
         Populate the given chosen_rotation list from remaining_layers (using sample without replacement) by applying the
         maps_config filters.
@@ -202,11 +202,25 @@ def get_map_rotation(
             # Remove it from the pool since we used it (using without replacement policy).
             remaining_layers.remove(chosen_layer)
 
+            # Add the description of this choice. Use the value of filter in most cases. Use key of filter in bool case.
+            if isinstance(filter_config, str) and filter_config.casefold() == 'any':
+                descriptions.append(['any'])
+            else:
+                description = []
+                for key, value in filter_config.items():
+                    value = upgrade_to_list(value)
+                    description.extend([v if not isinstance(v, bool) else key for v in value])
+                descriptions.append(description)
+
+                #descriptions.extend(
+                #    [value if not isinstance(value, bool) else key for key, value in filter_config.items()])
+
     # Make a copy of the layers so we can sample from it without replacement.
     remaining_layers = copy.deepcopy(all_layers)
 
     # The chosen rotation will be stored here (as a list of layer dicts).
     chosen_rotation = []
+    descriptions = []
 
     # Get the config section for starting_maps.
     starting_maps_config = rotation_config.get('starting_maps', [])
@@ -214,16 +228,16 @@ def get_map_rotation(
     # Fill up the chosen_rotation from remaining_layers by applying starting_maps_config.
     # NOTE(bsubei): both chosen_rotation and remaining_layers are passed by reference and mutated in the function.
     populate_chosen_rotation(
-        chosen_rotation, remaining_layers, starting_maps_config)
+        chosen_rotation, descriptions, remaining_layers, starting_maps_config)
 
     # Now do it again number_of_repeats times for regular_maps_config.
     number_of_repeats = rotation_config.get('number_of_repeats', 1)
     regular_maps_config = rotation_config.get('regular_maps')
     for _ in range(number_of_repeats):
         populate_chosen_rotation(
-            chosen_rotation, remaining_layers, regular_maps_config)
+            chosen_rotation, descriptions, remaining_layers, regular_maps_config)
 
-    return chosen_rotation
+    return (chosen_rotation, descriptions)
 
 
 def get_layers_string(map_rotation):
@@ -334,6 +348,7 @@ def parse_config(config_path, layers):
 
     :param config_path: str The path to the config file.
     :param layers: list(dict) The list of layers to check against.
+    :return: The config used to choose the random maps (parsed JSON object).
     :raises InvalidConfigException: The exception raised if the config is invalid.
     """
     with open(config_path, 'r') as f:
@@ -347,7 +362,7 @@ def main():
     args = parse_cli()
     layers = get_json_layers(args.input_filepath, args.input_url)
     config = parse_config(args.config_filepath, layers)
-    chosen_map_rotation = get_map_rotation(config, layers)
+    chosen_map_rotation, _ = get_map_rotation_and_descriptions(config, layers)
     write_rotation(chosen_map_rotation, args.output_filepath)
     send_rotation_to_discord(chosen_map_rotation, args.discord_webhook_url)
 

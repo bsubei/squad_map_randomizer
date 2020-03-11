@@ -124,14 +124,14 @@ class TestSquadMapRandomizer:
 
     # Run this test 100 times with a different random seed each time.
     @pytest.mark.parametrize('execution_number', range(100))
-    def test_get_map_rotation_default(self, default_config, default_layers, execution_number):
-        """ Tests that we can call get_map_rotation correctly on the default layers and config. """
+    def test_get_map_rotation_and_descriptions_default(self, default_config, default_layers, execution_number):
+        """ Tests that we can call get_map_rotation_and_descriptions correctly on the default layers and config. """
         # Set the random seed so the results are deterministic across different pytest invocations so we can reproduce
         # test failures.
         random.seed(execution_number)
 
         # The default config will return 2 skirmish maps and 20 (R)AAS maps.
-        rotation = squad_map_randomizer.get_map_rotation(
+        rotation, descriptions = squad_map_randomizer.get_map_rotation_and_descriptions(
             default_config, default_layers)
 
         # Expect the correct number of maps (for each type as well).
@@ -158,12 +158,22 @@ class TestSquadMapRandomizer:
             is_large_map(layer) and
             is_helicopters(layer) for layer in rotation]) == 5
 
+        # Expect all the descriptions to match the filter keys/values they used.
+        EXPECTED_STARTING_MAP_DESCRIPTIONS = [['Skirmish'], ['Skirmish']]
+        EXPECTED_REGULAR_MAP_DESCRIPTIONS = [
+                        ['AAS', 'RAAS', 'small'],
+                        ['AAS', 'RAAS', 'medium'],
+                        ['AAS', 'RAAS', 'medium'],
+                        ['AAS', 'RAAS', 'large', 'helicopters']] * 5
+        assert descriptions[:2] == EXPECTED_STARTING_MAP_DESCRIPTIONS
+        assert descriptions[2:] == EXPECTED_REGULAR_MAP_DESCRIPTIONS
+
     # Run this test 100 times with a different random seed each time.
     @pytest.mark.parametrize('execution_number', range(100))
-    def test_get_map_rotation_duplicates(self, default_layers, execution_number):
+    def test_get_map_rotation_and_descriptions_duplicates(self, default_layers, execution_number):
         """
-        Tests that we can call get_map_rotation correctly and not get duplicate maps too close to each other or
-        duplicate layers at all.
+        Tests that we can call get_map_rotation_and_descriptions correctly and not get duplicate maps too close to each
+        other or duplicate layers at all.
         """
         # Set the random seed so the results are deterministic across different pytest invocations so we can reproduce
         # test failures.
@@ -178,7 +188,7 @@ class TestSquadMapRandomizer:
                 {'map': 'Chora'},
                 {'map': 'Fool\'s Road'}]}
 
-        rotation = squad_map_randomizer.get_map_rotation(
+        rotation, descriptions = squad_map_randomizer.get_map_rotation_and_descriptions(
             config_with_potential_duplicates, default_layers)
 
         # Check that no two layers with the same map name are too close.
@@ -186,16 +196,24 @@ class TestSquadMapRandomizer:
             rotation, squad_map_randomizer.NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP)
         # Check that no two layers are duplicates.
         assert not has_duplicate_layers(rotation)
+        # Expect all the descriptions to match the filter keys/values they used.
+        EXPECTED_REGULAR_MAP_DESCRIPTIONS = [
+                        ['Al Basrah'],
+                        ['Belaya'],
+                        ['Chora'],
+                        ['Fool\'s Road']] * 5
+        assert descriptions == EXPECTED_REGULAR_MAP_DESCRIPTIONS
 
         # Test that if we intentionally make it impossible to avoid duplicates, it prints an error but continues.
         impossible_config = {'number_of_repeats': 10,
                              'regular_maps': [{'map': 'Chora'}]}
         with mock.patch('squad_map_randomizer.logging.error') as mock_error:
-            rotation = squad_map_randomizer.get_map_rotation(
+            rotation, descriptions = squad_map_randomizer.get_map_rotation_and_descriptions(
                 impossible_config, default_layers)
             assert mock_error.call_count == 9
             assert all('Could not get a valid map without duplicates!' in args[0][0]
                        for args in mock_error.call_args_list)
+            assert descriptions == [['Chora']] * 10
 
         # It will have some duplicate map names that are too close, but never duplicate layers (sampling without
         # replacement).
@@ -203,26 +221,32 @@ class TestSquadMapRandomizer:
             rotation, squad_map_randomizer.NUM_MIN_LAYERS_BEFORE_DUPLICATE_MAP)
         assert not has_duplicate_layers(rotation)
 
-    def test_get_map_rotation_any(self, default_layers):
-        """ Tests that we can call get_map_rotation correctly with a config with the 'any' keyword. """
+    def test_get_map_rotation_and_descriptions_any(self, default_layers):
+        """ Tests that we can call get_map_rotation_and_descriptions correctly with a config with the 'any' keyword. """
         # Test case with a config containing the special 'any' keyword (signifying no filters for this layer).
         config_with_any = {'regular_maps':
                            ['any', {'gamemode': ['AAS', 'RAAS'], 'map_size': 'large', 'helicopters': True}, 'any']}
-        rotation = squad_map_randomizer.get_map_rotation(
+        rotation, descriptions = squad_map_randomizer.get_map_rotation_and_descriptions(
             config_with_any, default_layers)
         # Check that the rotation has three layers, the second of which has filters while the rest have no filters.
         assert len(rotation) == 3
         assert ((is_aas(rotation[1]) or is_raas(rotation[1])) and
                 is_large_map(rotation[1]) and
                 is_helicopters(rotation[1]))
+        # Expect all the descriptions to match the filter keys/values they used.
+        EXPECTED_REGULAR_MAP_DESCRIPTIONS = [
+                        ['any'],
+                        ['AAS', 'RAAS', 'large', 'helicopters'],
+                        ['any']]
+        assert descriptions == EXPECTED_REGULAR_MAP_DESCRIPTIONS
 
-    def test_get_map_rotation_team(self, default_layers):
-        """ Tests that we can call get_map_rotation correctly with a config with the 'team' filter. """
+    def test_get_map_rotation_and_descriptions_team(self, default_layers):
+        """ Tests that we can call get_map_rotation_and_descriptions correctly with a config with the 'team' filter. """
         # Test that the 'team' filter is special and is accepted as a filter.
         config_with_team = {'number_of_repeats': 5, 'regular_maps': [
             {'team': ['INS', 'RU']},
             {'team': ['US']}]}
-        rotation = squad_map_randomizer.get_map_rotation(
+        rotation, descriptions = squad_map_randomizer.get_map_rotation_and_descriptions(
             config_with_team, default_layers)
 
         # Check that every other map starting from the first has either INS or RU in either team.
@@ -233,23 +257,27 @@ class TestSquadMapRandomizer:
         for layer in rotation[1::2]:
             assert 'US' in [layer['team1'], layer['team2']]
 
-    def test_get_map_rotation_examples(self, default_layers):
-        """ Tests that we can call get_map_rotation correctly on all the example configs. """
+        # Expect all the descriptions to match the filter keys/values they used.
+        EXPECTED_REGULAR_MAP_DESCRIPTIONS = [['INS', 'RU'], ['US']] * 5
+        assert descriptions == EXPECTED_REGULAR_MAP_DESCRIPTIONS
+
+    def test_get_map_rotation_and_descriptions_examples(self, default_layers):
+        """ Tests that we can call get_map_rotation_and_descriptions correctly on all the example configs. """
         # Test that all example configs can be parsed without problems, and result in non-empty rotations.
         for path in os.scandir(squad_map_randomizer.EXAMPLES_CONFIG_DIR):
             config = squad_map_randomizer.parse_config(path, default_layers)
-            rotation = squad_map_randomizer.get_map_rotation(
+            rotation, descriptions = squad_map_randomizer.get_map_rotation_and_descriptions(
                 config, default_layers)
             assert len(rotation) > 0
 
-    def test_get_map_rotation_invalid_filter(self, default_layers):
-        """ Tests that we expect errors when get_map_rotation is called on config filters. """
+    def test_get_map_rotation_and_descriptions_invalid_filter(self, default_layers):
+        """ Tests that we expect errors when get_map_rotation_and_descriptions is called on config filters. """
         # Test that incorrect filters (no layers meet the conditions) prints an error but continues.
         config_with_team = {'number_of_repeats': 5, 'regular_maps': [
             {'team': ['misspelled_name']},
             {'team': ['US']}]}
         with mock.patch('squad_map_randomizer.logging.error') as mock_error:
-            rotation = squad_map_randomizer.get_map_rotation(
+            rotation, descriptions = squad_map_randomizer.get_map_rotation_and_descriptions(
                 config_with_team, default_layers)
             # Check that only 5 errors are printed.
             assert mock_error.call_count == 5
@@ -259,6 +287,9 @@ class TestSquadMapRandomizer:
             assert len(rotation) == 5
             assert all(layer['team1'] == 'US' or layer['team2']
                        == 'US' for layer in rotation)
+            # Expect all the descriptions to match the filter keys/values they used.
+            EXPECTED_REGULAR_MAP_DESCRIPTIONS = [['US']] * 5
+            assert descriptions == EXPECTED_REGULAR_MAP_DESCRIPTIONS
 
     def test_is_config_valid_examples(self, default_layers):
         """ Tests that all the example configs successfully validate. """
